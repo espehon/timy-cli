@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools"]                             # Boilerplate
+build-backend = "setuptools.build_meta"               # Boilerplate
+
+[project]
+name = "timy-cli"                      # Your pip install <name> (must be unique)
+version = "1.3.1"                                     # Must be manually updated here with every change
+authors = [
+	{ name="espehon", email="espehon@gmail.com" },      # Email is optional (as array?)
+]
+description = "Analog Clock and Timer"               # Header on PyPI (above readme)
+readme = "README.md"                                  # Boilerplate and will be added to the PyPI page
+requires-python = ">=3.8"                            # Python version
+dependencies = [                                      # Any site-package dependencies (as a list)
+	"colorama >= 0.4.6"                                    # NOTE: if any given, the pip test will be different
+]
+classifiers = [                                       # Kinda boilerplate. Used as hashtags really
+	"Programming Language :: Python :: 3",            # Tweak this to match your project
+	"Development Status :: 3 - Alpha",                # https://pypi.org/classifiers/
+	"Environment :: Console",
+	"License :: OSI Approved :: MIT License",
+	"Operating System :: OS Independent",
+	"Topic :: Utilities"
+]
+
+[project.scripts]                                     # The entrypoint for CLI app (if needed)
+chksum = "timy_cli.timy:cli"               # SYNTAX: <commandlet> = "folder.file:function"
+                                                      # def main in __main__ and place in if name check
+[project.urls]
+"Homepage" = "https://github.com/espehon/timy-cli"              # Boilerplate links to GitHub repo
+"Bug Tracker" = "https://github.com/espehon/timy-cli/issues"    # Boilerplate links to GitHub repo issues
