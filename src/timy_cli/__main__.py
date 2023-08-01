@@ -1,4 +1,4 @@
-#  This file can be ran from the command line as the entry point for chksum 
+
 import sys
 
 from timy import cli
