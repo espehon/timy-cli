@@ -8,6 +8,8 @@ from os import name, get_terminal_size
 from subprocess import run
 
 from colorama import Fore, init
+from timy_cli.settings import load_or_create_settings
+
 init(autoreset=True)
 
 
@@ -104,23 +106,26 @@ def progressbar(it, prefix="", suffix=""): #progressbar -->  prefix: [##########
 
 
 class AnalogClock:
-    def __init__(self, width=50, height=25, stretch_x=True):
-        self.width = width
+    def __init__(self, width=None, height=25, stretch_x=True):
         self.height = height
         self.stretch_x = stretch_x
-        self.canvas = [[' '] * width for _ in range(width)]
+        self.width = width if width is not None else (height * 2 if stretch_x else height)
+        self.canvas = [[' '] * self.width for _ in range(self.height)]
+        self.center_x = self.width // 2
+        self.center_y = self.height // 2
+        self.x_radius = self.width // 2 - 1
+        self.y_radius = self.height // 2 - 1
+        self.x_scale = self.x_radius / 24.0
+        self.y_scale = self.y_radius / 24.0
 
     def reset_canvas(self):
-        self.canvas = [[' '] * self.width for _ in range(self.width)]
+        self.canvas = [[' '] * self.width for _ in range(self.height)]
 
     def plot(self, t, r, sym='*'):
-        if self.stretch_x:
-            row = int((self.height - r * math.cos(t)) / 2)
-        else:
-            row = int(self.height - r * math.cos(t))
-        col = int(self.height + r * math.sin(t))
+        row = int(self.center_y - r * self.y_scale * math.cos(t))
+        col = int(self.center_x + r * self.x_scale * math.sin(t))
 
-        if 0 <= row < self.width and 0 <= col < self.width:
+        if 0 <= row < self.height and 0 <= col < self.width:
             self.canvas[row][col] = sym
 
     def draw(self):
@@ -132,13 +137,13 @@ class AnalogClock:
         hr_fmt = 12
 
         for i in range(999):
-            self.plot(i/158.0, 24)
+            self.plot(i / 158.0, 24)
             self.plot(h, i * min_size, "▓")
             self.plot(h / hr_fmt, i * hr_size, "█")
             for q in range(12):
                 self.plot(q / 1.91, 24 - i * 0.005, '•')
 
-        rendered = '\n'.join(''.join(row) for row in self.canvas[:self.height])
+        rendered = '\n'.join(''.join(row) for row in self.canvas)
         time_str = f"{now.tm_hour:02}:{now.tm_min:02}"
         return rendered, time_str
 
@@ -163,5 +168,7 @@ def cli():
     if args.countdown is not None:
         countdownTimer(args.countdown[0])
     else:
-        clock = AnalogClock()
+        settings = load_or_create_settings()
+        stretch_x = settings.get("stretch_x", True)
+        clock = AnalogClock(stretch_x=stretch_x)
         clock.render(args._refresh)

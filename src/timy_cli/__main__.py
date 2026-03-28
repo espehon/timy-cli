@@ -3,7 +3,7 @@
 
 import sys
 
-from timy import cli
+from timy_cli.timy import cli
 
 if __name__ == "__main__":
     sys.exit(cli())

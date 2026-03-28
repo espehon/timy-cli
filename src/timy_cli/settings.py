@@ -10,6 +10,7 @@ DEFAULT_SETTINGS = {
     "TimeZone2": "UTC",
     "TimeZone3": "America/New_York",
     "TimeZone4": "Europe/London",
+    "stretch_x": True
 }
 
 
