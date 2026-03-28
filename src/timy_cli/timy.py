@@ -7,7 +7,11 @@ import importlib.metadata
 from datetime import datetime
 from os import name, get_terminal_size
 from subprocess import run
-from zoneinfo import ZoneInfo
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 
 from colorama import Fore, init
 from timy_cli.settings import load_or_create_settings

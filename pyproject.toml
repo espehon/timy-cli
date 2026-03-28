@@ -12,7 +12,9 @@ description = "Analog Clock and Timer"               # Header on PyPI (above rea
 readme = "README.md"                                  # Boilerplate and will be added to the PyPI page
 requires-python = ">=3.8"                            # Python version
 dependencies = [                                      # Any site-package dependencies (as a list)
-	"colorama >= 0.4.6"                                    # NOTE: if any given, the pip test will be different
+	"colorama >= 0.4.6",
+	"tzdata >= 2024.1",
+	"backports.zoneinfo; python_version < \"3.9\""
 ]
 classifiers = [                                       # Kinda boilerplate. Used as hashtags really
 	"Programming Language :: Python :: 3",            # Tweak this to match your project
