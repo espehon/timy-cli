@@ -201,21 +201,77 @@ class AnalogClock:
             return
 
 
+class SmallClock:
+    def __init__(self, zone_name=None, stretch_x=False):
+        self.zone_name = zone_name
+        self.timezone = load_zone(zone_name)
+        self.stretch_x = stretch_x
+        self.base_width = 13
+        self.height = 9
+        self.width = self.base_width * 2 if stretch_x else self.base_width
+        self.center_x = self.width // 2
+        self.center_y = self.height // 2
+        self.radius = min(self.center_x, self.center_y) - 1
+
+    def current_time(self):
+        if self.timezone is None:
+            return datetime.now().astimezone()
+        return datetime.now(self.timezone)
+
+    def hand_position(self, step, radius):
+        angle = step * (math.pi / 6)
+        row = int(round(self.center_y - math.cos(angle) * radius))
+        col = int(round(self.center_x + math.sin(angle) * radius))
+        return row, col
+
+    def draw(self):
+        now = self.current_time()
+        canvas = [[' '] * self.width for _ in range(self.height)]
+
+        for tick in range(12):
+            row, col = self.hand_position(tick, self.radius)
+            if 0 <= row < self.height and 0 <= col < self.width:
+                canvas[row][col] = '.'
+
+        # Center marker
+        if 0 <= self.center_y < self.height and 0 <= self.center_x < self.width:
+            canvas[self.center_y][self.center_x] = '+'
+
+        minute_step = round(now.minute / 5) % 12
+        hour_total = (now.hour % 12) * 12 + now.minute // 5
+        hour_step = round(hour_total / 12) % 12
+
+        hour_row, hour_col = self.hand_position(hour_step, self.radius - 2)
+        minute_row, minute_col = self.hand_position(minute_step, self.radius - 1)
+
+        if 0 <= hour_row < self.height and 0 <= hour_col < self.width:
+            canvas[hour_row][hour_col] = 'h'
+        if 0 <= minute_row < self.height and 0 <= minute_col < self.width:
+            if (minute_row, minute_col) == (hour_row, hour_col):
+                canvas[minute_row][minute_col] = 'X'
+            else:
+                canvas[minute_row][minute_col] = 'm'
+
+        rendered = '\n'.join(''.join(row) for row in canvas)
+        time_str = now.strftime("%H:%M")
+        return rendered, time_str
+
+
 class MultipleClockRenderer:
-    def __init__(self, zone_names, height=12, stretch_x=True, padding=4):
-        self.zone_names = [zone for zone in zone_names if zone is not None]
+    def __init__(self, zone_names, stretch_x=False, padding=4):
+        self.zone_names = [zone for zone in zone_names if zone is not None][:4]
         if not self.zone_names:
             self.zone_names = ['local']
         self.padding_string = ' ' * padding
-        self.clocks = [AnalogClock(height=height, stretch_x=stretch_x, zone_name=zone) for zone in self.zone_names]
+        self.clocks = [SmallClock(zone_name=zone, stretch_x=stretch_x) for zone in self.zone_names]
 
     def render_once(self):
         rendered_clocks = [clock.draw() for clock in self.clocks]
         clock_lines = [rendered.splitlines() for rendered, _ in rendered_clocks]
-        widths = [clock.width for clock in self.clocks]
+        widths = [len(lines[0]) for lines in clock_lines]
 
         top_labels = [zone_label(zone)[:width].center(width) for zone, width in zip(self.zone_names, widths)]
-        bottom_labels = [time_str[:width].center(width) for (_, time_str), width in zip(rendered_clocks, widths)]
+        bottom_labels = [time_str.center(width) for (_, time_str), width in zip(rendered_clocks, widths)]
 
         composed = [self.padding_string.join(top_labels)]
         for row in range(len(clock_lines[0])):
@@ -248,12 +304,13 @@ def cli():
             'TimeZone2',
             'TimeZone3',
             'TimeZone4',
-        ] if settings.get(key) is not None]
+        ] if settings.get(key) is not None][:4]
         stretch_x = settings.get('stretch_x', True)
         renderer = MultipleClockRenderer(zones, stretch_x=stretch_x)
         renderer.render(args._refresh)
     else:
         settings = load_or_create_settings()
         stretch_x = settings.get('stretch_x', True)
-        clock = AnalogClock(stretch_x=stretch_x)
+        main_zone = settings.get('MainZone', 'local')
+        clock = AnalogClock(stretch_x=stretch_x, zone_name=main_zone)
         clock.render(args._refresh)
