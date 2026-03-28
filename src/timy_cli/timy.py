@@ -4,7 +4,8 @@ import time
 import sys
 import argparse
 import importlib.metadata
-from os import system, name, get_terminal_size
+from os import name, get_terminal_size
+from subprocess import run
 
 from colorama import Fore, init
 init(autoreset=True)
@@ -23,11 +24,13 @@ parser.add_argument('-?', '--help', action='help', help='Show this help message 
 
 parser.add_argument('-v', '--version', action='version', version='%(prog)s {version}'.format(version=__version__))
 
-parser.add_argument('-r', '--refresh', dest='_refresh', action='store_true', help='Refresh every minute until stopped')
+parser.add_argument('-l', '--live', dest='_refresh', action='store_true', help='Refresh every minute until stopped. (live clock)')
 
-parser.add_argument('-c', '--continuous', dest='_refresh', action='store_true', help='Alias for --refresh')
+parser.add_argument('-s', '--stopwatch', action='store_true', help='Interactive Stopwatch timer')
 
-parser.add_argument('-t', '--timer', metavar='M', action='append', type=int, nargs='?', const=60, help='Countdown timer for [M] minutes (default 60)')
+parser.add_argument('-c', '--countdown', metavar='M', action='append', type=int, nargs='?', const=60, help='Countdown timer for [M] minutes (default 60)')
+
+parser.add_argument('-m', '--multiple', action='store_true', help='Show multiple timezones (defined in settings.json)')
 
 args = parser.parse_args() #Execute parse_args()
 
@@ -35,12 +38,10 @@ args = parser.parse_args() #Execute parse_args()
 
 
 def clear():
-    # for windows
     if name == 'nt':
-        _ = system('cls')
-    # for mac and linux(here, os.name is 'posix')
+        _ = run('cls', shell=True)
     else:
-        _ = system('clear')
+        _ = run('clear')
 
 def countdownTimer(Minutes):
     clear()
@@ -70,7 +71,7 @@ def countdownTimer(Minutes):
           "-.|.-"
                ''')
     try:
-        for m in progressbar(range(Minutes), prefix="Timer: " +str(Minutes) + " Min ", sufix="(pass ← wait)"):
+        for m in progressbar(range(Minutes), prefix="Timer: " +str(Minutes) + " Min ", suffix="(pass ← wait)"):
             time.sleep(60)
             if m == Minutes - 1:
                 clear()
@@ -87,12 +88,12 @@ def countdownTimer(Minutes):
         print(f"\n\n{Fore.YELLOW}[Timer interrupted]\n\n")
         
 
-def progressbar(it, prefix="", sufix=""): #progressbar -->  prefix: [############################.............................] i/it
-    size = abs(get_terminal_size()[0] - len(prefix) - len(sufix) - 16)
+def progressbar(it, prefix="", suffix=""): #progressbar -->  prefix: [############################.............................] i/it
+    size = abs(get_terminal_size()[0] - len(prefix) - len(suffix) - 16)
     count = len(it)
     def show(j):
         x = int(size*j/count)
-        sys.stdout.write("%s[%s%s] %i ← %i %s  \r" % (prefix, "#"*x, "."*(size-x), j, (count-j), sufix))
+        sys.stdout.write("%s[%s%s] %i ← %i %s  \r" % (prefix, "#"*x, "."*(size-x), j, (count-j), suffix))
         sys.stdout.flush()
     show(0) #This prints the progressbar at 0 progress. Then next for loop renders the rest (stating at 1)
     for i, item in enumerate(it): #This is the 'i' in the comment on the 'def' line
@@ -101,89 +102,66 @@ def progressbar(it, prefix="", sufix=""): #progressbar -->  prefix: [###########
     sys.stdout.write("\n")
     sys.stdout.flush()
 
-def p(t,r,sym='*'):
-    global c
-    if stretch_x == True:
-        c[int((clock_hight-r*math.cos(t))/2)][int(clock_hight+r*math.sin(t))]=sym
-    else:
-        c[int(clock_hight-r*math.cos(t))][int(clock_hight+r*math.sin(t))]=sym
 
-def analog_clock(_refresh):
-    global c
-    global stretch_x
-    global clock_hight
+class AnalogClock:
+    def __init__(self, width=50, height=25, stretch_x=True):
+        self.width = width
+        self.height = height
+        self.stretch_x = stretch_x
+        self.canvas = [[' '] * width for _ in range(width)]
 
-    hr_fmt = 12
-    stretch_x = True #--> if clock_width is twice that of clock_hight
-    min_size = 0.02
-    hr_size = 0.01
-    clock_width = 50
-    clock_hight = 25
+    def reset_canvas(self):
+        self.canvas = [[' '] * self.width for _ in range(self.width)]
 
-    try:
-        while True:
-            print('\n' * 4)
-            c = [[' '] * clock_width for i in range(clock_width)]
-            t = time.localtime()
-            h = t.tm_hour * 6.283 + t.tm_min / 9.549
-            for i in range(999):
-                p(i/158.0,24)
-                p(h,i*min_size,"▓")
-                p(h/hr_fmt,i*hr_size,"█")
-                for q in range(12):
-                    p(q/1.91,24-i*.005,'•')
-            for y in range(clock_hight):
-                print(''.join(c[y]))
-            print((" "*int(((clock_width/2)-2))) + str(time.localtime().tm_hour).zfill(2) + ":" + str(time.localtime().tm_min).zfill(2))
-            if _refresh == True:
-                print("\n[ctrl + c] to terminate", end='')
-                time.sleep(60)
-                clear()
-            else:
-                break
-    except:
-        #exit without error message
-        return
+    def plot(self, t, r, sym='*'):
+        if self.stretch_x:
+            row = int((self.height - r * math.cos(t)) / 2)
+        else:
+            row = int(self.height - r * math.cos(t))
+        col = int(self.height + r * math.sin(t))
 
-def mini_clocks(_refresh):
-    global c
-    global stretch_x
-    global clock_hight
+        if 0 <= row < self.width and 0 <= col < self.width:
+            self.canvas[row][col] = sym
 
-    hr_fmt = 12
-    stretch_x = True #--> if clock_width is twice that of clock_hight
-    min_size = 0.02
-    hr_size = 0.01
-    clock_width = 26
-    clock_hight = 13
+    def draw(self):
+        self.reset_canvas()
+        now = time.localtime()
+        h = now.tm_hour * 6.283 + now.tm_min / 9.549
+        min_size = 0.02
+        hr_size = 0.01
+        hr_fmt = 12
 
-    try:
-        while True:
-            print('\n' * 4)
-            c = [[' '] * clock_width for i in range(clock_width)]
-            t = time.localtime()
-            h = t.tm_hour * 6.283 + t.tm_min / 9.549
-            for i in range(999):
-                p(i/158.0,24)
-                p(h,i*min_size,"▓")
-                p(h/hr_fmt,i*hr_size,"█")
-                for q in range(12):
-                    p(q/1.91,24-i*.005,'•')
-            for y in range(clock_hight):
-                print(''.join(c[y]))
-            print((" "*int(((clock_width/2)-2))) + str(time.localtime().tm_hour).zfill(2) + ":" + str(time.localtime().tm_min).zfill(2))
-            if _refresh == True:
-                print("\n[ctrl + c] to terminate", end='')
-                time.sleep(60)
-                clear()
-            else:
-                break
-    except:
-        #exit without error message
-        return
+        for i in range(999):
+            self.plot(i/158.0, 24)
+            self.plot(h, i * min_size, "▓")
+            self.plot(h / hr_fmt, i * hr_size, "█")
+            for q in range(12):
+                self.plot(q / 1.91, 24 - i * 0.005, '•')
+
+        rendered = '\n'.join(''.join(row) for row in self.canvas[:self.height])
+        time_str = f"{now.tm_hour:02}:{now.tm_min:02}"
+        return rendered, time_str
+
+    def render(self, refresh=False):
+        try:
+            while True:
+                print('\n' * 4)
+                rendered, time_str = self.draw()
+                print(rendered)
+                print(" " * int(((self.width / 2) - 2)) + time_str)
+                if refresh:
+                    print("\n[ctrl + c] to terminate", end='')
+                    time.sleep(60)
+                    clear()
+                else:
+                    break
+        except KeyboardInterrupt:
+            return
+
 
 def cli():
-    if args.timer != None:
-        countdownTimer(args.timer[0])
+    if args.countdown is not None:
+        countdownTimer(args.countdown[0])
     else:
-        analog_clock(args._refresh)
+        clock = AnalogClock()
+        clock.render(args._refresh)

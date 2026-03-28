@@ -1,3 +1,5 @@
+# MIT License
+# Copyright (c) 2022 espehon
 
 import sys
 

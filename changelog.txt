@@ -2,6 +2,10 @@
 
 
 --------    <<< Change Log >>>    --------
+V 3.0.0
+    Refactored codd.
+    
+
 V 2.0.0
     timy is now an installable package from PyPI
 
