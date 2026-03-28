@@ -4,8 +4,10 @@ import time
 import sys
 import argparse
 import importlib.metadata
+from datetime import datetime
 from os import name, get_terminal_size
 from subprocess import run
+from zoneinfo import ZoneInfo
 
 from colorama import Fore, init
 from timy_cli.settings import load_or_create_settings
@@ -44,6 +46,30 @@ def clear():
         _ = run('cls', shell=True)
     else:
         _ = run('clear')
+
+
+def load_zone(zone_name):
+    if zone_name is None:
+        return None
+    if isinstance(zone_name, str) and zone_name.lower() == 'local':
+        return None
+    try:
+        return ZoneInfo(zone_name)
+    except Exception:
+        normalized = zone_name.replace(' ', '_') if isinstance(zone_name, str) else zone_name
+        try:
+            return ZoneInfo(normalized)
+        except Exception:
+            return None
+
+
+def zone_label(zone_name):
+    if zone_name is None:
+        return 'Unknown'
+    if isinstance(zone_name, str) and zone_name.lower() == 'local':
+        return 'Local'
+    return zone_name
+
 
 def countdownTimer(Minutes):
     clear()
@@ -106,9 +132,11 @@ def progressbar(it, prefix="", suffix=""): #progressbar -->  prefix: [##########
 
 
 class AnalogClock:
-    def __init__(self, width=None, height=25, stretch_x=True):
+    def __init__(self, width=None, height=25, stretch_x=True, zone_name=None):
         self.height = height
         self.stretch_x = stretch_x
+        self.zone_name = zone_name
+        self.timezone = load_zone(zone_name)
         self.width = width if width is not None else (height * 2 if stretch_x else height)
         self.canvas = [[' '] * self.width for _ in range(self.height)]
         self.center_x = self.width // 2
@@ -128,10 +156,15 @@ class AnalogClock:
         if 0 <= row < self.height and 0 <= col < self.width:
             self.canvas[row][col] = sym
 
+    def current_time(self):
+        if self.timezone is None:
+            return datetime.now().astimezone()
+        return datetime.now(self.timezone)
+
     def draw(self):
         self.reset_canvas()
-        now = time.localtime()
-        h = now.tm_hour * 6.283 + now.tm_min / 9.549
+        now = self.current_time()
+        h = now.hour * 6.283 + now.minute / 9.549
         min_size = 0.02
         hr_size = 0.01
         hr_fmt = 12
@@ -144,7 +177,7 @@ class AnalogClock:
                 self.plot(q / 1.91, 24 - i * 0.005, '•')
 
         rendered = '\n'.join(''.join(row) for row in self.canvas)
-        time_str = f"{now.tm_hour:02}:{now.tm_min:02}"
+        time_str = now.strftime("%H:%M")
         return rendered, time_str
 
     def render(self, refresh=False):
@@ -164,11 +197,59 @@ class AnalogClock:
             return
 
 
+class MultipleClockRenderer:
+    def __init__(self, zone_names, height=12, stretch_x=True, padding=4):
+        self.zone_names = [zone for zone in zone_names if zone is not None]
+        if not self.zone_names:
+            self.zone_names = ['local']
+        self.padding_string = ' ' * padding
+        self.clocks = [AnalogClock(height=height, stretch_x=stretch_x, zone_name=zone) for zone in self.zone_names]
+
+    def render_once(self):
+        rendered_clocks = [clock.draw() for clock in self.clocks]
+        clock_lines = [rendered.splitlines() for rendered, _ in rendered_clocks]
+        widths = [clock.width for clock in self.clocks]
+
+        top_labels = [zone_label(zone)[:width].center(width) for zone, width in zip(self.zone_names, widths)]
+        bottom_labels = [time_str[:width].center(width) for (_, time_str), width in zip(rendered_clocks, widths)]
+
+        composed = [self.padding_string.join(top_labels)]
+        for row in range(len(clock_lines[0])):
+            composed.append(self.padding_string.join(lines[row] for lines in clock_lines))
+        composed.append(self.padding_string.join(bottom_labels))
+        return '\n'.join(composed)
+
+    def render(self, refresh=False):
+        try:
+            while True:
+                print('\n' * 4)
+                print(self.render_once())
+                if refresh:
+                    print("\n[ctrl + c] to terminate", end='')
+                    time.sleep(60)
+                    clear()
+                else:
+                    break
+        except KeyboardInterrupt:
+            return
+
+
 def cli():
     if args.countdown is not None:
         countdownTimer(args.countdown[0])
+    elif args.multiple:
+        settings = load_or_create_settings()
+        zones = [settings.get(key) for key in [
+            'TimeZone1',
+            'TimeZone2',
+            'TimeZone3',
+            'TimeZone4',
+        ] if settings.get(key) is not None]
+        stretch_x = settings.get('stretch_x', True)
+        renderer = MultipleClockRenderer(zones, stretch_x=stretch_x)
+        renderer.render(args._refresh)
     else:
         settings = load_or_create_settings()
-        stretch_x = settings.get("stretch_x", True)
+        stretch_x = settings.get('stretch_x', True)
         clock = AnalogClock(stretch_x=stretch_x)
         clock.render(args._refresh)
