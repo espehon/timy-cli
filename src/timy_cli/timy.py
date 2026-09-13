@@ -14,6 +14,8 @@ except ImportError:
     from backports.zoneinfo import ZoneInfo
 
 from colorama import Fore, init
+from questionary import Choice
+import questionary
 from timy_cli.settings import load_or_create_settings
 
 init(autoreset=True)
@@ -39,6 +41,8 @@ parser.add_argument('-s', '--stopwatch', action='store_true', help='Interactive 
 parser.add_argument('-c', '--countdown', metavar='M', action='append', type=int, nargs='?', const=60, help='Countdown timer for [M] minutes (default 60)')
 
 parser.add_argument('-m', '--multiple', action='store_true', help='Show multiple timezones (defined in settings.json)')
+
+parser.add_argument('-z', '--zone', action='store_true', help='Configure timezone settings interactively')
 
 args = parser.parse_args() #Execute parse_args()
 
@@ -73,6 +77,104 @@ def zone_label(zone_name):
     if isinstance(zone_name, str) and zone_name.lower() == 'local':
         return 'Local'
     return zone_name
+
+
+POPULAR_ZONES = [
+    ('UTC', 'UTC'),
+    ('US Eastern (New York)', 'America/New_York'),
+    ('US Central (Chicago)', 'America/Chicago'),
+    ('US Mountain (Denver)', 'America/Denver'),
+    ('US Pacific (Los Angeles)', 'America/Los_Angeles'),
+    ('Arizona (no DST)', 'America/Phoenix'),
+    ('Hawaii (no DST)', 'Pacific/Honolulu'),
+    ('Alaska', 'America/Anchorage'),
+    ('London', 'Europe/London'),
+    ('Central Europe (Berlin)', 'Europe/Berlin'),
+    ('Eastern Europe (Athens)', 'Europe/Athens'),
+    ('Moscow', 'Europe/Moscow'),
+    ('India (Kolkata)', 'Asia/Kolkata'),
+    ('China (Shanghai)', 'Asia/Shanghai'),
+    ('Japan (Tokyo)', 'Asia/Tokyo'),
+    ('Singapore', 'Asia/Singapore'),
+    ('Australia Eastern (Sydney)', 'Australia/Sydney'),
+    ('Australia Central (Darwin, no DST)', 'Australia/Darwin'),
+    ('Australia Western (Perth, no DST)', 'Australia/Perth'),
+    ('New Zealand (Auckland)', 'Pacific/Auckland'),
+]
+
+ZONE_CANCELLED = '__cancelled__'
+
+
+def zone_choices(include_disabled=False):
+    choices = [Choice('Local', 'local')]
+    if include_disabled:
+        choices.append(Choice('Disabled', '__disabled__'))
+    choices.extend(Choice(label, value) for label, value in POPULAR_ZONES)
+    choices.append(Choice('More', '__more__'))
+    return choices
+
+
+def choose_zone(current_zone, include_disabled=False):
+    selected = questionary.select(
+        'Select a timezone:',
+        choices=zone_choices(include_disabled),
+        default=current_zone,
+    ).ask()
+    if selected is None:
+        return ZONE_CANCELLED
+    if selected == '__disabled__':
+        return None
+    if selected != '__more__':
+        return selected
+
+    try:
+        from zoneinfo import available_timezones
+    except ImportError:
+        from backports.zoneinfo import available_timezones
+
+    all_zones = sorted(available_timezones())
+
+    return questionary.select(
+        'Select a timezone from the full list:',
+        choices=[Choice('Local', 'local')] + [Choice(zone, zone) for zone in all_zones],
+        default=current_zone if current_zone in all_zones else None,
+    ).ask() or ZONE_CANCELLED
+
+
+def configure_zones():
+    from timy_cli.settings import save_settings
+
+    settings = load_or_create_settings()
+    target = questionary.select(
+        'Which timezone setting do you want to change?',
+        choices=[
+            Choice('Main clock', 'MainZone'),
+            Choice('Multi clock 1', 'TimeZone1'),
+            Choice('Multi clock 2', 'TimeZone2'),
+            Choice('Multi clock 3', 'TimeZone3'),
+            Choice('Multi clock 4', 'TimeZone4'),
+            Choice('Done', '__done__'),
+        ],
+    ).ask()
+
+    while target not in (None, '__done__'):
+        selected_zone = choose_zone(settings.get(target), target != 'MainZone')
+        if selected_zone == ZONE_CANCELLED:
+            return
+        settings[target] = selected_zone
+        save_settings(settings)
+        print(f"{target} set to {settings[target] or 'disabled'}")
+        target = questionary.select(
+            'Choose another setting:',
+            choices=[
+                Choice('Main clock', 'MainZone'),
+                Choice('Multi clock 1', 'TimeZone1'),
+                Choice('Multi clock 2', 'TimeZone2'),
+                Choice('Multi clock 3', 'TimeZone3'),
+                Choice('Multi clock 4', 'TimeZone4'),
+                Choice('Done', '__done__'),
+            ],
+        ).ask()
 
 
 def countdownTimer(Minutes):
@@ -189,6 +291,7 @@ class AnalogClock:
             while True:
                 print('\n' * 4)
                 rendered, time_str = self.draw()
+                print(zone_label(self.zone_name).center(self.width))
                 print(rendered)
                 print(" " * int(((self.width / 2) - 2)) + time_str)
                 if refresh:
@@ -207,11 +310,12 @@ class SmallClock:
         self.timezone = load_zone(zone_name)
         self.stretch_x = stretch_x
         self.base_width = 13
-        self.height = 9
+        self.height = 11
         self.width = self.base_width * 2 if stretch_x else self.base_width
         self.center_x = self.width // 2
         self.center_y = self.height // 2
-        self.radius = min(self.center_x, self.center_y) - 1
+        self.radius = self.center_y - 1
+        self.x_scale = 2 if stretch_x else 1
 
     def current_time(self):
         if self.timezone is None:
@@ -221,8 +325,17 @@ class SmallClock:
     def hand_position(self, step, radius):
         angle = step * (math.pi / 6)
         row = int(round(self.center_y - math.cos(angle) * radius))
-        col = int(round(self.center_x + math.sin(angle) * radius))
+        col = int(round(self.center_x + math.sin(angle) * radius * self.x_scale))
         return row, col
+
+    def draw_line(self, canvas, step, radius, symbol):
+        end_row, end_col = self.hand_position(step, radius)
+        for distance in range(1, radius + 1):
+            fraction = distance / radius
+            row = int(round(self.center_y + (end_row - self.center_y) * fraction))
+            col = int(round(self.center_x + (end_col - self.center_x) * fraction))
+            if 0 <= row < self.height and 0 <= col < self.width:
+                canvas[row][col] = symbol
 
     def draw(self):
         now = self.current_time()
@@ -231,26 +344,22 @@ class SmallClock:
         for tick in range(12):
             row, col = self.hand_position(tick, self.radius)
             if 0 <= row < self.height and 0 <= col < self.width:
-                canvas[row][col] = '.'
+                canvas[row][col] = 'o'
 
-        # Center marker
-        if 0 <= self.center_y < self.height and 0 <= self.center_x < self.width:
-            canvas[self.center_y][self.center_x] = '+'
+        for label, step, offset in [('12', 0, -1), ('3', 3, 0), ('6', 6, 0), ('9', 9, 0)]:
+            row, col = self.hand_position(step, self.radius)
+            col += offset
+            for index, character in enumerate(label):
+                if 0 <= row < self.height and 0 <= col + index < self.width:
+                    canvas[row][col + index] = character
 
         minute_step = round(now.minute / 5) % 12
-        hour_total = (now.hour % 12) * 12 + now.minute // 5
-        hour_step = round(hour_total / 12) % 12
+        hour_step = round(((now.hour % 12) * 60 + now.minute) / 60) % 12
+        self.draw_line(canvas, hour_step, self.radius - 2, 'H')
+        self.draw_line(canvas, minute_step, self.radius - 1, 'M')
 
-        hour_row, hour_col = self.hand_position(hour_step, self.radius - 2)
-        minute_row, minute_col = self.hand_position(minute_step, self.radius - 1)
-
-        if 0 <= hour_row < self.height and 0 <= hour_col < self.width:
-            canvas[hour_row][hour_col] = 'h'
-        if 0 <= minute_row < self.height and 0 <= minute_col < self.width:
-            if (minute_row, minute_col) == (hour_row, hour_col):
-                canvas[minute_row][minute_col] = 'X'
-            else:
-                canvas[minute_row][minute_col] = 'm'
+        if 0 <= self.center_y < self.height and 0 <= self.center_x < self.width:
+            canvas[self.center_y][self.center_x] = '+'
 
         rendered = '\n'.join(''.join(row) for row in canvas)
         time_str = now.strftime("%H:%M")
@@ -295,7 +404,9 @@ class MultipleClockRenderer:
 
 
 def cli():
-    if args.countdown is not None:
+    if args.zone:
+        configure_zones()
+    elif args.countdown is not None:
         countdownTimer(args.countdown[0])
     elif args.multiple:
         settings = load_or_create_settings()

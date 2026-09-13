@@ -29,3 +29,9 @@ def load_or_create_settings():
         settings = DEFAULT_SETTINGS.copy()
         settings.update(user_settings)
         return settings
+
+
+def save_settings(settings):
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(settings, f, indent=4)
